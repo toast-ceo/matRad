@@ -627,7 +627,9 @@ classdef matRad_PlanWidget < matRad_Widget
             
             set(handles.btnRunSequencing,'Value',pln.propOpt.runSequencing);
             set(handles.btnRunDAO,'Value',pln.propOpt.runDAO);
-            set(handles.radiobutton3Dconf,'Value',pln.propOpt.conf3D);
+            if isfield(pln.propOpt, 'conf3D')
+                set(handles.radiobutton3Dconf,'Value',pln.propOpt.conf3D);
+            end
             
             set(handles.editDoseX,'String',num2str(pln.propDoseCalc.doseGrid.resolution.x));
             set(handles.editDoseY,'String',num2str(pln.propDoseCalc.doseGrid.resolution.y));
