@@ -297,6 +297,7 @@ for i = 1:length(stf) % loop over all beams
     end
 end
 
+disp(size(dij));
 %Close Waitbar
 if ishandle(figureWait)
     delete(figureWait);
