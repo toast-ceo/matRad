@@ -48,6 +48,10 @@ beamInfo(dij.numOfBeams+1).logIx  = true(size(w));
 % compute physical dose for all beams individually and together
 for i = 1:length(beamInfo)
     resultGUI.(['physicalDose', beamInfo(i).suffix]) = reshape(full(dij.physicalDose{scenNum} * (resultGUI.w .* beamInfo(i).logIx)),dij.doseGrid.dimensions);
+
+    if isfield(dij,'mAlphaDose') && isfield(dij,'mSqrtBetaDose') && isfield(dij,'mZDose')
+        dij = matRad_calcMKMDose(dij,resultGUI.w);
+    end
 end
 
 % consider RBE for protons
@@ -77,17 +81,19 @@ end
 % consider biological optimization for carbon ions
 if isfield(dij,'mAlphaDose') && isfield(dij,'mSqrtBetaDose')
    
-    ix = dij.bx~=0;
-
+    ix = dij.bx~=0; 
+ 
     for i = 1:length(beamInfo)  
        wBeam = (resultGUI.w .* beamInfo(i).logIx);
+       
        resultGUI.(['effect', beamInfo(i).suffix])       = full(dij.mAlphaDose{scenNum} * wBeam + (dij.mSqrtBetaDose{scenNum} * wBeam).^2);
        resultGUI.(['effect', beamInfo(i).suffix])       = reshape(resultGUI.(['effect', beamInfo(i).suffix]),dij.doseGrid.dimensions);
-    
+       
+       
        resultGUI.(['RBExDose', beamInfo(i).suffix])     = zeros(size(resultGUI.(['effect', beamInfo(i).suffix])));
-       resultGUI.(['RBExDose', beamInfo(i).suffix])(ix) = (sqrt(dij.ax(ix).^2 + 4 .* dij.bx(ix) .* resultGUI.(['effect', beamInfo(i).suffix])(ix)) - dij.ax(ix))./(2.*dij.bx(ix));
+       resultGUI.(['RBExDose', beamInfo(i).suffix])(ix) = ((sqrt(dij.ax(ix).^2 + 4 .* dij.bx(ix) .* resultGUI.(['effect', beamInfo(i).suffix])(ix)) - dij.ax(ix))./(2.*dij.bx(ix))) * 2.39;
 
-       resultGUI.(['RBE', beamInfo(i).suffix])          = resultGUI.(['RBExDose', beamInfo(i).suffix])./resultGUI.(['physicalDose', beamInfo(i).suffix]);
+       resultGUI.(['RBE', beamInfo(i).suffix])          = resultGUI.(['RBExDose', beamInfo(i).suffix])./resultGUI.(['physicalDose', beamInfo(i).suffix]);       
 
        resultGUI.(['alpha', beamInfo(i).suffix])        = zeros(dij.doseGrid.dimensions);
        resultGUI.(['beta',  beamInfo(i).suffix])        = zeros(dij.doseGrid.dimensions);
@@ -99,6 +105,7 @@ if isfield(dij,'mAlphaDose') && isfield(dij,'mSqrtBetaDose')
        resultGUI.(['beta', beamInfo(i).suffix])(ix)     = (SqrtBetaDoseCube(ix)./resultGUI.(['physicalDose', beamInfo(i).suffix])(ix)).^2;
     end
 end
+
 
 % group similar fields together
 resultGUI = orderfields(resultGUI);

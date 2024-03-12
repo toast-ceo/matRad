@@ -36,6 +36,9 @@ matRad_cfg = MatRad_Config.instance();
 if sum(strcmp(pln.propOpt.bioOptimization,{'LEMIV_effect','LEMIV_RBExD'}))>0 && (~isfield(dij,'mAlphaDose') || ~isfield(dij,'mSqrtBetaDose')) && strcmp(pln.radiationMode,'carbon')
     warndlg('Alpha and beta matrices for effect based and RBE optimization not available - physical optimization is carried out instead.');
     pln.propOpt.bioOptimization = 'none';
+elseif sum(strcmp(pln.propOpt.bioOptimization,{'MKM_RBExD'}))>0 && (~isfield(dij,'mZDose')) && strcmp(pln.radiationMode,'carbon')
+    warndlg('Z1D matrices for effect based and RBE optimization not available - physical optimization is carried out instead.');
+    pln.propOpt.bioOptimization = 'none';
 end
 
 % consider VOI priorities
@@ -154,17 +157,56 @@ elseif (strcmp(pln.propOpt.bioOptimization,'LEMIV_effect') || strcmp(pln.propOpt
            %pre-calculations
            dij.gamma              = zeros(dij.doseGrid.numOfVoxels,1);   
            dij.gamma(dij.ixDose) = dij.ax(dij.ixDose)./(2*dij.bx(dij.ixDose)); 
+
+            CurrEffectTarget = (dij.mAlphaDose{1}(V,:)*wOnes + (dij.mSqrtBetaDose{1}(V,:)*wOnes).^2);
+            % ensure a underestimated biological effective dose 
+            TolEstBio        = 1.2;
+            % calculate maximal RBE in target
             
-           % calculate current in target
-           CurrEffectTarget = (dij.mAlphaDose{1}(V,:)*wOnes + (dij.mSqrtBetaDose{1}(V,:)*wOnes).^2);
-           % ensure a underestimated biological effective dose 
-           TolEstBio        = 1.2;
-           % calculate maximal RBE in target
-           maxCurrRBE = max(-cst{ixTarget,5}.alphaX + sqrt(cst{ixTarget,5}.alphaX^2 + ...
-                        4*cst{ixTarget,5}.betaX.*CurrEffectTarget)./(2*cst{ixTarget,5}.betaX*(dij.physicalDose{1}(V,:)*wOnes)));
-           wInit    =  ((doseTarget)/(TolEstBio*maxCurrRBE*max(dij.physicalDose{1}(V,:)*wOnes)))* wOnes;
+            maxCurrRBE = max((-cst{ixTarget,5}.alphaX + sqrt(cst{ixTarget,5}.alphaX^2 + ...
+                        4*cst{ixTarget,5}.betaX.*CurrEffectTarget))./(2*cst{ixTarget,5}.betaX*(dij.physicalDose{1}(V,:)*wOnes)));
+
+            wInit    =  ((doseTarget)/(TolEstBio*maxCurrRBE*max(dij.physicalDose{1}(V,:)*wOnes)))* wOnes;
+
+    end
+% MKM extension
+elseif isequal(pln.propOpt.bioOptimization,'MKM_RBExD')
+    % retrieve photon LQM parameter
+    [ax,bx] = matRad_getPhotonLQMParameters(cst,dij.doseGrid.numOfVoxels,1);
+
+    if ~isequal(dij.ax(dij.ax~=0),ax(dij.ax~=0)) || ...
+       ~isequal(dij.bx(dij.bx~=0),bx(dij.bx~=0))
+         matRad_cfg.dispError('Inconsistent biological parameter - please recalculate dose influence matrix!\n');
     end
     
+    dij.ixDose  = dij.bx~=0;
+    
+    %pre-calculations
+    dij.gamma              = zeros(dij.doseGrid.numOfVoxels,1);   
+    dij.gamma(dij.ixDose) = dij.ax(dij.ixDose)./(2*dij.bx(dij.ixDose)); 
+
+    % calculate current in target
+%    CurrEffectTarget = matRad_calcMKMDose(dij,pln,wOnes,V);
+
+    % ensure a underestimated biological effective dose 
+    TolEstBio        = 5.0;
+    % calculate maximal RBE in target
+    
+    %mix_Z1D = sum(dij.mZDose{1} .* dij.physicalDose{1} * wOnes, 2);
+    %phys = sum(dij.physicalDose{1} * wOnes, 2);
+    %mix_Z1D = mix_Z1D ./ phys;
+    %mix_Z1D(isnan(mix_Z1D)) = 0;
+    %alpha = 0.0708 + 0.0615 * mix_Z1D;
+    
+    CurrEffectTarget = (dij.mAlphaDose{1}(V,:)*wOnes + (dij.mSqrtBetaDose{1}(V,:)*wOnes).^2);
+    
+    maxCurrRBE = max((-cst{ixTarget,5}.alphaX + sqrt(cst{ixTarget,5}.alphaX^2 + ...
+                4*cst{ixTarget,5}.betaX.*CurrEffectTarget))./(2*cst{ixTarget,5}.betaX*(dij.physicalDose{1}(V,:)*wOnes)));
+            
+    wInit    =  ((doseTarget)/(TolEstBio*maxCurrRBE*max(dij.physicalDose{1}(V,:)*wOnes)))* wOnes;
+    
+    dij = matRad_calcMKMDose(dij,wInit);
+
 else 
     bixelWeight =  (doseTarget)/(mean(dij.physicalDose{1}(V,:)*wOnes)); 
     wInit       = wOnes * bixelWeight;
@@ -186,6 +228,8 @@ switch pln.propOpt.bioOptimization
         backProjection = matRad_ConstantRBEProjection;
     case 'LEMIV_RBExD'
         backProjection = matRad_VariableRBEProjection;
+    case 'MKM_RBExD'
+        backProjection = matRad_MKMRBEProjection;
     case 'none'
         backProjection = matRad_DoseProjection;
     otherwise
@@ -214,11 +258,9 @@ switch pln.propOpt.optimizer
         optimizer = matRad_OptimizerIPOPT;
 end
         
-if ~optimizer.IsAvailable()
-    matRad_cfg.dispError(['Optimizer ''' pln.propOpt.optimizer ''' not available!']);
-end
+%optimizer = matRad_OptimizerFmincon;
 
-optimizer = optimizer.optimize(wInit,optiProb,dij,cst);
+optimizer = optimizer.optimize(sum(wInit,2),optiProb,dij,cst);
 
 wOpt = optimizer.wResult;
 info = optimizer.resultInfo;

@@ -43,7 +43,7 @@ if ~isfield(baseData,'sigma')
     
     % set dose for query > tabulated depth dose values to zero
     X(radDepths > max(depths),1) = 0;
-        
+
     % compute lateral sigmas
     sigmaSq_Narr = X(:,2).^2 + sigmaIni_sq;
     sigmaSq_Bro  = X(:,4).^2 + sigmaIni_sq;

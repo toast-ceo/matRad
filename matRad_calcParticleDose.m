@@ -55,7 +55,17 @@ if (isequal(pln.propOpt.bioOptimization,'LEMIV_effect') || isequal(pln.propOpt.b
             dij.mAlphaDose{i}    = spalloc(dij.doseGrid.numOfVoxels,numOfColumnsDij,1);
             dij.mSqrtBetaDose{i} = spalloc(dij.doseGrid.numOfVoxels,numOfColumnsDij,1);
         end
-        
+% MKM extension
+elseif isequal(pln.propOpt.bioOptimization,'MKM_RBExD') && strcmp(pln.radiationMode,'carbon')
+
+        alphaDoseTmpContainer = cell(numOfBixelsContainer,dij.numOfScenarios);
+        betaDoseTmpContainer  = cell(numOfBixelsContainer,dij.numOfScenarios);
+        zDoseTmpContainer = cell(numOfBixelsContainer, dij.numOfScenarios);
+        for i=1:dij.numOfScenarios
+           dij.mAlphaDose{i}    = spalloc(dij.doseGrid.numOfVoxels,numOfColumnsDij,1);
+           dij.mSqrtBetaDose{i} = spalloc(dij.doseGrid.numOfVoxels,numOfColumnsDij,1);
+           dij.mZDose{i} = spalloc(dij.doseGrid.numOfVoxels,numOfColumnsDij,1); 
+        end
 elseif isequal(pln.propOpt.bioOptimization,'const_RBExD') && strcmp(pln.radiationMode,'protons')
             dij.RBE = 1.1;
             matRad_cfg.dispInfo('matRad: Using a constant RBE of %g\n',dij.RBE);   
@@ -76,7 +86,7 @@ if isfield(pln,'propDoseCalc') && ...
 end
 
 % generates tissue class matrix for biological optimization
-if (isequal(pln.propOpt.bioOptimization,'LEMIV_effect') || isequal(pln.propOpt.bioOptimization,'LEMIV_RBExD')) ... 
+if (isequal(pln.propOpt.bioOptimization,'LEMIV_effect') || isequal(pln.propOpt.bioOptimization,'LEMIV_RBExD') || isequal(pln.propOpt.bioOptimization,'MKM_RBExD'))... 
         && strcmp(pln.radiationMode,'carbon')
     
     if   isfield(machine.data,'alphaX') && isfield(machine.data,'betaX')
@@ -123,7 +133,6 @@ if (isequal(pln.propOpt.bioOptimization,'LEMIV_effect') || isequal(pln.propOpt.b
         matRad_cfg.dispError('base data is incomplement - alphaX and/or betaX is missing');
         
     end
-    
 % issue warning if biological optimization not possible
 elseif sum(strcmp(pln.propOpt.bioOptimization,{'LEMIV_effect','LEMIV_RBExD'}))>0 && ~strcmp(pln.radiationMode,'carbon') ||...
        ~strcmp(pln.radiationMode,'protons') && strcmp(pln.propOpt.bioOptimization,'const_RBExD')
@@ -171,7 +180,7 @@ for i = 1:length(stf) % loop over all beams
             radDepths = radDepthVdoseGrid{1}(ix);   
                        
             % just use tissue classes of voxels found by ray tracer
-            if (isequal(pln.propOpt.bioOptimization,'LEMIV_effect') || isequal(pln.propOpt.bioOptimization,'LEMIV_RBExD')) ... 
+            if (isequal(pln.propOpt.bioOptimization,'LEMIV_effect') || isequal(pln.propOpt.bioOptimization,'LEMIV_RBExD')|| isequal(pln.propOpt.bioOptimization,'MKM_RBExD')) ... 
                 && strcmp(pln.radiationMode,'carbon')
                     vTissueIndex_j = vTissueIndex(ix,:);
             end
@@ -286,6 +295,15 @@ for i = 1:length(stf) % loop over all beams
                     
                     alphaDoseTmpContainer{mod(counter-1,numOfBixelsContainer)+1,1} = sparse(VdoseGrid(ix(currIx)),1,bixelAlpha.*bixelDose,dij.doseGrid.numOfVoxels,1);
                     betaDoseTmpContainer{mod(counter-1,numOfBixelsContainer)+1,1}  = sparse(VdoseGrid(ix(currIx)),1,sqrt(bixelBeta).*bixelDose,dij.doseGrid.numOfVoxels,1);
+                elseif (isequal(pln.propOpt.bioOptimization,'MKM_RBExD') && strcmp(pln.radiationMode,'carbon'))
+                    [bixelAlpha, bixelBeta, bixelZ] = matRad_calcMKMLQParameter(...
+                        currRadDepths,...
+                        vTissueIndex_j(currIx,:),...
+                        machine.data(energyIx));
+                    
+                    alphaDoseTmpContainer{mod(counter-1,numOfBixelsContainer)+1,1} = sparse(VdoseGrid(ix(currIx)),1,bixelAlpha.*bixelDose,dij.doseGrid.numOfVoxels,1);
+                    betaDoseTmpContainer{mod(counter-1,numOfBixelsContainer)+1,1}  = sparse(VdoseGrid(ix(currIx)),1,sqrt(bixelBeta).*bixelDose,dij.doseGrid.numOfVoxels,1);
+                    zDoseTmpContainer{mod(counter-1,numOfBixelsContainer)+1,1} = sparse(VdoseGrid(ix(currIx)),1,bixelZ,dij.doseGrid.numOfVoxels,1);
                 end
                 
                 matRad_calcDoseFillDij;                
@@ -297,7 +315,6 @@ for i = 1:length(stf) % loop over all beams
     end
 end
 
-disp(size(dij));
 %Close Waitbar
 if ishandle(figureWait)
     delete(figureWait);
